@@ -315,6 +315,38 @@ body {
 }
 .auto-toggle-switch.on::after { left:22px; }
 
+/* === 错题练习模式 === */
+.practice-banner {
+  width:100%; max-width:560px; background:linear-gradient(135deg,#fef2f2,#fff7ed);
+  border:2px solid #fca5a5; border-radius:12px; padding:12px 16px;
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  animation: fadeSlideIn 0.35s ease;
+}
+.practice-banner .practice-info { display:flex; align-items:center; gap:8px; font-size:0.9rem; color:#dc2626; font-weight:600; }
+.practice-banner .practice-info svg { width:20px; height:20px; flex-shrink:0; }
+.practice-banner .exit-practice-btn {
+  padding:8px 16px; border-radius:8px; font-size:0.82rem; font-weight:600;
+  cursor:pointer; border:none; background:#fff; color:#dc2626; border:1.5px solid #fca5a5;
+  transition:all 0.2s; white-space:nowrap;
+}
+.practice-banner .exit-practice-btn:hover { background:#fef2f2; border-color:#dc2626; }
+
+/* 错题本中的练习按钮 */
+.wrong-book-start-btn {
+  width:calc(100% - 32px); padding:12px; border-radius:10px; font-size:0.95rem; font-weight:600;
+  cursor:pointer; border:none; transition:all 0.2s; margin:8px 16px;
+  background:linear-gradient(135deg,#dc2626,#b91c1c); color:#fff;
+  box-shadow:0 2px 8px rgba(220,38,38,0.25);
+}
+.wrong-book-start-btn:hover { box-shadow:0 4px 14px rgba(220,38,38,0.35); }
+.wrong-book-start-btn:active { transform:scale(0.97); }
+.wrong-book-start-btn:disabled { background:#d1d5db; box-shadow:none; cursor:not-allowed; }
+
+.practice-progress {
+  font-size:0.78rem; color:#6b7280; text-align:center; padding:6px 0;
+}
+.practice-progress .remaining { color:#dc2626; font-weight:600; }
+
 /* 错题按钮角标 */
 .ctrl-btn { position:relative; }
 .ctrl-btn .wrong-badge {
@@ -454,9 +486,9 @@ body {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
       随机
     </button>
-    <button class="ctrl-btn" id="wrongBookBtn" onclick="showWrongBook()">
+    <button class="ctrl-btn" id="wrongBookBtn" onclick="toggleWrongPractice()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-      错题本<span class="wrong-badge" id="wrongBadge" style="display:none">0</span>
+      错题练习<span class="wrong-badge" id="wrongBadge" style="display:none">0</span>
     </button>
     <button class="ctrl-btn" id="answerSheetBtn" onclick="toggleAnswerSheet()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -520,7 +552,10 @@ var state = {
   answers:{},
   filtered:[],
   autoAdvance: true,
-  autoTimer: null
+  autoTimer: null,
+  wrongPracticeMode: false,
+  wrongPracticeSubject: null,
+  wrongPracticeTotal: 0
 };
 
 // ===== 错题本 (localStorage) =====
@@ -545,7 +580,10 @@ function saveProgress() {
     qtype: state.qtype,
     index: state.index,
     shuffled: state.shuffled,
-    answers: state.answers
+    answers: state.answers,
+    wrongPracticeMode: state.wrongPracticeMode,
+    wrongPracticeSubject: state.wrongPracticeSubject,
+    wrongPracticeTotal: state.wrongPracticeTotal
   };
   try {
     localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
@@ -561,11 +599,31 @@ function loadProgress() {
     if (saved.qtype !== undefined) state.qtype = saved.qtype;
     if (saved.shuffled) state.shuffled = saved.shuffled;
     if (saved.answers) state.answers = saved.answers;
+    if (saved.wrongPracticeMode) {
+      state.wrongPracticeMode = saved.wrongPracticeMode;
+      state.wrongPracticeSubject = saved.wrongPracticeSubject;
+      state.wrongPracticeTotal = saved.wrongPracticeTotal || 0;
+      state.qtype = 'all';
+    }
     // Rebuild filtered list
     var all = getFlatQuestions(state.subject);
     if (state.qtype !== 'all') {
       all = all.filter(function(q) { return q._type === state.qtype; });
     }
+    // 错题练习模式：只保留错题本中的题目
+    if (state.wrongPracticeMode) {
+      var book = getWrongBook();
+      var wrongIds = {};
+      if (book[state.subject]) {
+        var qIds = Object.keys(book[state.subject]);
+        for (var w = 0; w < qIds.length; w++) {
+          wrongIds[qIds[w]] = true;
+        }
+      }
+      all = all.filter(function(q) { return wrongIds[q.id]; });
+    }
+    // 只保留未做题
+    all = all.filter(function(q) { return state.answers[q.id] === undefined; });
     if (state.shuffled) {
       all = shuffleArr(all);
     }
@@ -718,10 +776,14 @@ function showWrongBook(subject) {
   var overlay = document.createElement('div');
   overlay.className = 'wrong-book-overlay';
   overlay.id = 'wrongBookOverlay';
+  var practiceBtnHtml = qIds.length > 0
+    ? '<button class="wrong-book-start-btn" onclick="startWrongPractice(\'' + escAttr(activeSubject) + '\')">▶ 开始练习「' + escHtml(activeSubject) + '」错题 (' + qIds.length + '题)</button>'
+    : '';
   overlay.innerHTML = '<div class="wrong-book-panel">' +
     '<div class="wrong-book-header"><h3>错题本</h3><button class="wrong-book-close" onclick="closeWrongBook()">x</button></div>' +
     '<div class="wrong-book-tabs" id="wrongBookTabs">' + tabsHtml + '</div>' +
     '<div class="wrong-book-list" id="wrongBookList">' + listHtml + '</div>' +
+    practiceBtnHtml +
     '<div class="wrong-book-footer">' +
       '<button onclick="clearWrongBook(\'' + escAttr(activeSubject) + '\')">清空[' + escHtml(activeSubject) + ']错题</button>' +
       '<button class="danger" onclick="clearAllWrongBook()">清空全部错题</button>' +
@@ -737,7 +799,12 @@ function showWrongBook(subject) {
 function closeWrongBook() {
   var overlay = document.getElementById('wrongBookOverlay');
   if (overlay) overlay.remove();
-  render();
+  // 如果在错题练习模式，刷新列表以反映可能的删除操作
+  if (state.wrongPracticeMode) {
+    applyFilter();
+  } else {
+    render();
+  }
 }
 
 function switchWrongBookTab(subject) {
@@ -783,6 +850,7 @@ function reviewWrongQuestion(qId, subject) {
     state.subject = subject;
     applyFilter();
   }
+  // 先在当前未做列表中查找
   for (var i = 0; i < state.filtered.length; i++) {
     if (state.filtered[i].id === qId) {
       state.index = i;
@@ -796,6 +864,7 @@ function reviewWrongQuestion(qId, subject) {
       return;
     }
   }
+  // 尝试扩大题型范围查找
   if (state.qtype !== 'all') {
     state.qtype = 'all';
     applyFilter();
@@ -812,6 +881,24 @@ function reviewWrongQuestion(qId, subject) {
         return;
       }
     }
+  }
+  // 题目可能已答过被移出列表，从完整数据中查找
+  var fullList = getFlatQuestions(state.subject);
+  var foundQ = null;
+  for (var k = 0; k < fullList.length; k++) {
+    if (fullList[k].id === qId) { foundQ = fullList[k]; break; }
+  }
+  if (foundQ) {
+    state.filtered.push(foundQ);
+    state.index = state.filtered.length - 1;
+    state.flipped = false;
+    state.selected = null;
+    clearAutoTimer();
+    closeWrongBook();
+    render();
+    animateWrap();
+    document.querySelector('.card-scene').scrollIntoView({behavior:'smooth'});
+    return;
   }
   closeWrongBook();
   alert('题目未找到，可能已被移除');
@@ -832,21 +919,94 @@ function applyFilter() {
   if (state.qtype !== 'all') {
     all = all.filter(function(q) { return q._type === state.qtype; });
   }
+  // 错题练习模式：只保留错题本中的题目
+  if (state.wrongPracticeMode) {
+    var book = getWrongBook();
+    var wrongIds = {};
+    if (book[state.subject]) {
+      var qIds = Object.keys(book[state.subject]);
+      for (var w = 0; w < qIds.length; w++) {
+        wrongIds[qIds[w]] = true;
+      }
+    }
+    all = all.filter(function(q) { return wrongIds[q.id]; });
+  }
+  // 只保留未做过的题（两种模式统一行为）
+  all = all.filter(function(q) { return state.answers[q.id] === undefined; });
   state.filtered = all;
   state.index = 0;
   state.flipped = false;
   state.selected = null;
+  state._justFiltered = true; // 标记：本次 render 不要自动翻面
   clearAutoTimer();
   render();
 }
 
+// ===== 错题练习模式 =====
+function startWrongPractice(subject) {
+  var practiceSubject = subject || state.subject;
+  // 已在练习模式中：如果同学科则直接关闭弹窗，不同学科则先退出再进入
+  if (state.wrongPracticeMode) {
+    var overlay = document.getElementById('wrongBookOverlay');
+    if (overlay) overlay.remove();
+    if (state.wrongPracticeSubject === practiceSubject) return; // 已在同科练习中，无需操作
+    exitWrongPractice();
+  }
+  var book = getWrongBook();
+  // 检查该学科是否有错题
+  if (!book[practiceSubject] || Object.keys(book[practiceSubject]).length === 0) {
+    alert('「' + practiceSubject + '」没有错题，无需练习！');
+    return;
+  }
+  state.wrongPracticeMode = true;
+  state.wrongPracticeSubject = practiceSubject;
+  state.qtype = 'all';
+  if (state.subject !== practiceSubject) {
+    state.subject = practiceSubject;
+  }
+  // 将错题本中的题目恢复为"未做"状态
+  var book = getWrongBook();
+  if (book[practiceSubject]) {
+    var wrongQIds = Object.keys(book[practiceSubject]);
+    for (var i = 0; i < wrongQIds.length; i++) {
+      delete state.answers[wrongQIds[i]];
+    }
+  }
+  applyFilter();
+  // 记录初始错题总数（从实际列表长度取，保证一致）
+  state.wrongPracticeTotal = state.filtered.length;
+  saveProgress();
+  // 关闭错题本弹窗
+  var overlay = document.getElementById('wrongBookOverlay');
+  if (overlay) overlay.remove();
+}
+
+function exitWrongPractice() {
+  state.wrongPracticeMode = false;
+  state.wrongPracticeSubject = null;
+  state.wrongPracticeTotal = 0;
+  applyFilter();
+  saveProgress();
+}
+
+function toggleWrongPractice() {
+  if (state.wrongPracticeMode) {
+    exitWrongPractice();
+  } else {
+    // 显示错题本面板，用户确认后进入练习模式
+    showWrongBook();
+  }
+}
+
 function switchSubject(s) {
+  if (state.wrongPracticeMode) return; // 练习模式禁止切换学科
   if (state.subject === s) return;
   state.subject = s;
   applyFilter();
 }
 
 function switchType(t) {
+  if (state.wrongPracticeMode) return; // 练习模式禁止切换题型，保证数量一致
   if (state.qtype === t) return;
   state.qtype = t;
   applyFilter();
@@ -862,34 +1022,36 @@ function shuffleArr(arr) {
 }
 
 function toggleShuffle() {
+  if (state.filtered.length === 0) {
+    state.shuffled = false;
+    return;
+  }
   var currentQ = state.filtered[state.index];
   state.shuffled = !state.shuffled;
   if (state.shuffled) {
-    // 开启随机：打乱列表，跳到随机位置（第一道未做题，都做了就从头）
+    // 开启随机：打乱未做题列表
     state.filtered = shuffleArr(state.filtered);
-    var randIdx = 0;
-    for (var i = 0; i < state.filtered.length; i++) {
-      if (state.answers[state.filtered[i].id] === undefined) {
-        randIdx = i; break;
-      }
-    }
-    state.index = randIdx;
+    state.index = 0;
   } else {
-    // 关闭随机：恢复原始顺序，跳到第一道未做的题
+    // 关闭随机：恢复原始顺序，只保留未做题
     var all = getFlatQuestions(state.subject);
     if (state.qtype !== 'all') {
       all = all.filter(function(q) { return q._type === state.qtype; });
     }
-    state.filtered = all;
-    // 找第一道没做过的题
-    var firstUnanswered = 0;
-    for (var i = 0; i < state.filtered.length; i++) {
-      if (state.answers[state.filtered[i].id] === undefined) {
-        firstUnanswered = i;
-        break;
+    // 错题练习模式：只保留错题本中的题目
+    if (state.wrongPracticeMode) {
+      var book = getWrongBook();
+      var wrongIds = {};
+      if (book[state.subject]) {
+        var qIds = Object.keys(book[state.subject]);
+        for (var w = 0; w < qIds.length; w++) { wrongIds[qIds[w]] = true; }
       }
+      all = all.filter(function(q) { return wrongIds[q.id]; });
     }
-    state.index = firstUnanswered;
+    // 只保留未做题
+    all = all.filter(function(q) { return state.answers[q.id] === undefined; });
+    state.filtered = all;
+    state.index = 0;
   }
   state.flipped = false;
   state.selected = null;
@@ -901,6 +1063,9 @@ function toggleShuffle() {
 function resetProgress() {
   state.answers = {};
   state.index = 0; state.flipped = false; state.selected = null;
+  state.wrongPracticeMode = false;
+  state.wrongPracticeSubject = null;
+  state.wrongPracticeTotal = 0;
   clearAutoTimer();
   localStorage.removeItem(PROGRESS_KEY);  // 清除持久化进度
   render();
@@ -999,7 +1164,7 @@ function flipCard() {
     selected: state.selected
   };
 
-  // Wrong book management
+  // 错题本管理
   if (result === 'correct') {
     removeFromWrongBook(q.id);
   } else {
@@ -1011,12 +1176,52 @@ function flipCard() {
   document.getElementById('hintEl').style.display = 'none';
   var fb = document.getElementById('flipBtn');
   if (fb) fb.style.display = 'none';
+
+  // ★ 先渲染背面（题目还在列表中）
   renderBack();
-  updateStats();
-  updateNav();
   if (answerSheetVisible) renderAnswerSheet();
 
-  saveProgress();  // 持久化答题进度
+  // ★ 错题练习模式：答错保留在列表，清除记录以便重做
+  if (state.wrongPracticeMode && result !== 'correct') {
+    delete state.answers[q.id];  // 清除记录，下次出现为未做状态
+    // 题留在列表中，index 不变
+  } else {
+    // 答对或普通模式：从列表移除
+    var remainingList = state.filtered.filter(function(item) { return item.id !== q.id; });
+    state.filtered = remainingList;
+    if (state.index >= state.filtered.length && state.filtered.length > 0) {
+      state.index = state.filtered.length - 1;
+    }
+  }
+
+  updateStats();
+  updateNav();
+
+  // 错题练习模式：检查是否全部掌握
+  if (state.wrongPracticeMode && getWrongCount(state.subject) === 0) {
+    updateWrongBadge();
+    saveProgress();
+    scheduleAutoNext();
+    exitWrongPractice(); // exitWrongPractice 内部调用 applyFilter → render
+    alert('🎉 太棒了！所有错题都已掌握！');
+    return;
+  }
+
+  // 列表为空但还有错题 → 重建列表（答错的题需要重新出现）
+  if (state.wrongPracticeMode && state.filtered.length === 0 && getWrongCount(state.subject) > 0) {
+    applyFilter();
+    return;
+  }
+
+  // 普通模式下列表为空
+  if (!state.wrongPracticeMode && state.filtered.length === 0) {
+    saveProgress();
+    scheduleAutoNext();
+    render();
+    return;
+  }
+
+  saveProgress();
   scheduleAutoNext();
 }
 
@@ -1093,7 +1298,23 @@ function renderFront() {
   var alreadyAnswered = q && state.answers[q.id] !== undefined;
 
   var container = document.getElementById('frontContent');
-  if (!q) { container.innerHTML = '<p style="color:#9ca3af;text-align:center;padding:40px 0">暂无题目</p>'; return; }
+  if (!q) {
+    // 检查是"全部完成"还是"没有题目"
+    var fullAll = getFlatQuestions(state.subject);
+    if (state.qtype !== 'all') {
+      fullAll = fullAll.filter(function(fq) { return fq._type === state.qtype; });
+    }
+    var allDone = true;
+    for (var fi = 0; fi < fullAll.length; fi++) {
+      if (state.answers[fullAll[fi].id] === undefined) { allDone = false; break; }
+    }
+    if (fullAll.length > 0 && allDone) {
+      container.innerHTML = '<div style="text-align:center;padding:40px 0"><div style="font-size:3rem;margin-bottom:10px">🎉</div><p style="color:#16a34a;font-size:1.1rem;font-weight:600">全部完成！</p><p style="color:#9ca3af;font-size:0.85rem;margin-top:6px">当前范围内所有题目已做完</p></div>';
+    } else {
+      container.innerHTML = '<p style="color:#9ca3af;text-align:center;padding:40px 0">暂无题目</p>';
+    }
+    return;
+  }
 
   var isMulti = q._type === 'multi';
 
@@ -1179,23 +1400,31 @@ function renderBack() {
 
 
 function updateNav() {
-  var total = state.filtered.length;
-  var cur = total>0 ? state.index+1 : 0;
-  // 只统计当前筛选范围内的已答题数
-  var answered = 0;
-  var ansKeys = Object.keys(state.answers);
-  var inFilter = {};
-  for (var i = 0; i < state.filtered.length; i++) {
-    inFilter[state.filtered[i].id] = true;
+  var totalRemaining = state.filtered.length;
+  var cur = totalRemaining>0 ? state.index+1 : 0;
+  var totalAll, answered;
+
+  if (state.wrongPracticeMode) {
+    totalAll = state.wrongPracticeTotal || getWrongCount(state.subject);
+    answered = totalAll - getWrongCount(state.subject); // 已掌握 = 初始 - 剩余
+  } else {
+    // 普通模式：统计当前筛选范围内的已答题数
+    var fullList = getFlatQuestions(state.subject);
+    if (state.qtype !== 'all') {
+      fullList = fullList.filter(function(q) { return q._type === state.qtype; });
+    }
+    totalAll = fullList.length;
+    answered = 0;
+    for (var i = 0; i < fullList.length; i++) {
+      if (state.answers[fullList[i].id] !== undefined) answered++;
+    }
   }
-  for (var i = 0; i < ansKeys.length; i++) {
-    if (inFilter[ansKeys[i]]) answered++;
-  }
-  document.getElementById('navPage').textContent = cur + ' / ' + total;
-  document.getElementById('progressText').textContent = answered + ' / ' + total;
-  document.getElementById('progressFill').style.width = total>0 ? ((answered/total)*100)+'%' : '0%';
+
+  document.getElementById('navPage').textContent = cur + ' / ' + totalRemaining;
+  document.getElementById('progressText').textContent = answered + ' / ' + totalAll;
+  document.getElementById('progressFill').style.width = totalAll>0 ? ((answered/totalAll)*100)+'%' : '0%';
   document.getElementById('prevBtn').disabled = state.index <= 0;
-  document.getElementById('nextBtn').disabled = state.index >= total-1;
+  document.getElementById('nextBtn').disabled = state.index >= totalRemaining-1;
 }
 
 function updateStats() {
@@ -1234,6 +1463,21 @@ function navigate(fn) {
   state.selected = null;
   clearAutoTimer();
   document.getElementById('cardEl').classList.remove('flipped');
+  // 清理列表中已答过的题（来自答题卡跳转等临时插入），保留当前题
+  var curQ = state.filtered[state.index];
+  var cleanList = [];
+  for (var i = 0; i < state.filtered.length; i++) {
+    if (i === state.index || state.answers[state.filtered[i].id] === undefined) {
+      cleanList.push(state.filtered[i]);
+    }
+  }
+  if (cleanList.length !== state.filtered.length) {
+    state.filtered = cleanList;
+    // 重新定位当前题
+    for (var j = 0; j < cleanList.length; j++) {
+      if (cleanList[j].id === curQ.id) { state.index = j; break; }
+    }
+  }
   render();
   animateWrap();
   saveProgress();  // 持久化当前位置
@@ -1244,9 +1488,12 @@ function nextCard() { navigate(function(i) { return i+1; }); }
 
 function render() {
   // 已答过的题：恢复之前的选择状态，自动显示结果面
+  // 但刚切换筛选/模式时不自动翻面（_justFiltered 标记）
   var q = state.filtered[state.index];
   var wasAnswered = false;
-  if (q && state.answers[q.id] !== undefined && !state.flipped) {
+  var justFiltered = state._justFiltered;
+  state._justFiltered = false;
+  if (q && state.answers[q.id] !== undefined && !state.flipped && !justFiltered) {
     wasAnswered = true;
     var prev = state.answers[q.id];
     if (typeof prev === 'object' && prev.selected !== undefined) {
@@ -1265,6 +1512,12 @@ function render() {
     document.getElementById('hintEl').style.display = 'none';
     var fb3 = document.getElementById('flipBtn');
     if (fb3) fb3.style.display = 'none';
+  } else if (!state.flipped) {
+    // 确保 DOM 与状态一致（退出练习模式等场景）
+    document.getElementById('cardEl').classList.remove('flipped');
+    document.getElementById('hintEl').style.display = state.autoAdvance ? 'none' : '';
+    var fb4 = document.getElementById('flipBtn');
+    if (fb4) fb4.style.display = '';
   }
 
   updateNav();
@@ -1272,6 +1525,18 @@ function render() {
   updateWrongBadge();
 
   var all = getFlatQuestions(state.subject);
+  // 错题练习模式：统计范围限制为错题本中的未做题
+  if (state.wrongPracticeMode) {
+    var book = getWrongBook();
+    var wrongIds = {};
+    if (book[state.subject]) {
+      var qIds = Object.keys(book[state.subject]);
+      for (var w = 0; w < qIds.length; w++) { wrongIds[qIds[w]] = true; }
+    }
+    all = all.filter(function(q) { return wrongIds[q.id] && state.answers[q.id] === undefined; });
+  } else {
+    all = all.filter(function(q) { return state.answers[q.id] === undefined; });
+  }
   var counts = { single:0, multi:0, bool:0 };
   for (var i=0; i<all.length; i++) { counts[all[i]._type] = (counts[all[i]._type]||0)+1; }
 
@@ -1293,9 +1558,68 @@ function render() {
   var tabs = document.querySelectorAll('.subject-tab');
   for (var i=0; i<tabs.length; i++) {
     tabs[i].classList.toggle('active', tabs[i].dataset.subject === state.subject);
+    // 错题练习模式：禁用学科切换
+    if (state.wrongPracticeMode) {
+      tabs[i].style.pointerEvents = 'none';
+      tabs[i].style.opacity = '0.6';
+    } else {
+      tabs[i].style.pointerEvents = '';
+      tabs[i].style.opacity = '';
+    }
+  }
+
+  // 错题练习模式：禁用题型筛选（保证题目数量与总数一致）
+  var filterEls = document.querySelectorAll('.type-filter');
+  for (var i = 0; i < filterEls.length; i++) {
+    if (state.wrongPracticeMode) {
+      filterEls[i].style.pointerEvents = 'none';
+      filterEls[i].style.opacity = '0.6';
+    } else {
+      filterEls[i].style.pointerEvents = '';
+      filterEls[i].style.opacity = '';
+    }
   }
 
   document.getElementById('shuffleBtn').classList.toggle('active', state.shuffled);
+
+  // 错题练习按钮：练习模式下显示"退出练习"，否则显示错题数
+  var wbBtn = document.getElementById('wrongBookBtn');
+  if (wbBtn) {
+    if (state.wrongPracticeMode) {
+      wbBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 退出练习';
+      wbBtn.classList.add('active');
+    } else {
+      var wCount = getWrongCount();
+      wbBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 错题练习<span class="wrong-badge" id="wrongBadge" style="display:' + (wCount > 0 ? '' : 'none') + '">' + wCount + '</span>';
+      wbBtn.classList.remove('active');
+    }
+  }
+
+  // 错题练习模式：显示顶部横幅
+  var existingBanner = document.getElementById('practiceBanner');
+  if (state.wrongPracticeMode) {
+    var totalW = state.wrongPracticeTotal;
+    var remainingW = getWrongCount(state.subject);
+    var masteredW = totalW - remainingW;
+    if (!existingBanner) {
+      var banner = document.createElement('div');
+      banner.id = 'practiceBanner';
+      banner.className = 'practice-banner';
+      banner.innerHTML = '<div class="practice-info">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' +
+        '<span>错题练习 · ' + escHtml(state.subject) + ' · 剩余 ' + remainingW + ' 题 · 已掌握 ' + masteredW + ' / ' + totalW + '</span>' +
+        '</div>' +
+        '<button class="exit-practice-btn" onclick="exitWrongPractice()">退出练习</button>';
+      var main = document.getElementById('mainContent');
+      main.insertBefore(banner, main.firstChild);
+    } else {
+      var infoSpan = existingBanner.querySelector('.practice-info span');
+      if (infoSpan) infoSpan.textContent = '错题练习 · ' + escHtml(state.subject) + ' · 剩余 ' + remainingW + ' 题 · 已掌握 ' + masteredW + ' / ' + totalW;
+    }
+  } else {
+    if (existingBanner) existingBanner.remove();
+  }
+
 }
 
 
@@ -1376,12 +1700,26 @@ function renderAnswerSheet() {
 }
 
 function jumpToQuestion(qId) {
-  // 在当前 filtered 列表中查找题目
+  // 先在当前 filtered 列表中查找题目
   var idx = -1;
   for (var i = 0; i < state.filtered.length; i++) {
     if (state.filtered[i].id === qId) { idx = i; break; }
   }
-  if (idx < 0) return;
+  if (idx < 0) {
+    // 题目可能已答过被移出列表，从完整列表中查找
+    var fullList = getFlatQuestions(state.subject);
+    if (state.qtype !== 'all') {
+      fullList = fullList.filter(function(q) { return q._type === state.qtype; });
+    }
+    var foundQ = null;
+    for (var j = 0; j < fullList.length; j++) {
+      if (fullList[j].id === qId) { foundQ = fullList[j]; break; }
+    }
+    if (!foundQ) return;
+    // 将该题临时加入列表以便查看
+    state.filtered.push(foundQ);
+    idx = state.filtered.length - 1;
+  }
   state.index = idx;
   state.flipped = false;
   state.selected = null;
