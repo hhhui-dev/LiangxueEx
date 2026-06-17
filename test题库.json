@@ -1,0 +1,128 @@
+{
+  "测试科目A": {
+    "single_choice": [
+      {
+        "id": "test_s1",
+        "number": "1",
+        "question": "HTML的全称是什么？",
+        "options": [
+          {"label": "A", "text": "Hyper Text Markup Language"},
+          {"label": "B", "text": "High Tech Modern Language"},
+          {"label": "C", "text": "Hyper Transfer Markup Language"},
+          {"label": "D", "text": "Home Tool Markup Language"}
+        ],
+        "answer": "A",
+        "explanation": "HTML是超文本标记语言（Hyper Text Markup Language）的缩写，是用于创建网页的标准标记语言。"
+      },
+      {
+        "id": "test_s2",
+        "number": "2",
+        "question": "CSS中，以下哪个属性用于设置字体大小？",
+        "options": [
+          {"label": "A", "text": "text-size"},
+          {"label": "B", "text": "font-style"},
+          {"label": "C", "text": "font-size"},
+          {"label": "D", "text": "text-font"}
+        ],
+        "answer": "C",
+        "explanation": "font-size是CSS中用于设置字体大小的属性。text-size和text-font不是有效的CSS属性，font-style用于设置字体样式（如斜体）。"
+      },
+      {
+        "id": "test_s3",
+        "number": "3",
+        "question": "JavaScript中，用于声明常量的关键字是？",
+        "options": [
+          {"label": "A", "text": "var"},
+          {"label": "B", "text": "let"},
+          {"label": "C", "text": "const"},
+          {"label": "D", "text": "static"}
+        ],
+        "answer": "C",
+        "explanation": "const是ES6引入的用于声明常量的关键字。var和let用于声明变量，static是类中静态成员的关键字。"
+      }
+    ],
+    "multi_choice": [
+      {
+        "id": "test_m1",
+        "number": "1",
+        "question": "以下哪些是合法的JavaScript数据类型？（多选）",
+        "options": [
+          {"label": "A", "text": "string"},
+          {"label": "B", "text": "number"},
+          {"label": "C", "text": "float"},
+          {"label": "D", "text": "boolean"}
+        ],
+        "answer": ["A", "B", "D"],
+        "explanation": "JavaScript的基本数据类型包括string、number、boolean、null、undefined、symbol和bigint。float不是独立的数据类型，浮点数属于number类型。"
+      }
+    ],
+    "true_false": [
+      {
+        "id": "test_b1",
+        "number": "1",
+        "question": "JavaScript是一种编译型语言。",
+        "options": [
+          {"label": "A", "text": "正确"},
+          {"label": "B", "text": "错误"}
+        ],
+        "answer": "B",
+        "explanation": "JavaScript是一种解释型语言（更准确地说是JIT编译），不是传统的编译型语言。代码在运行时由浏览器的JavaScript引擎解释执行。"
+      },
+      {
+        "id": "test_b2",
+        "number": "2",
+        "question": "CSS Flexbox布局中，flex-direction的默认值是row。",
+        "options": [
+          {"label": "A", "text": "正确"},
+          {"label": "B", "text": "错误"}
+        ],
+        "answer": "A",
+        "explanation": "flex-direction的默认值确实是row，即主轴为水平方向，从左到右排列。"
+      }
+    ]
+  },
+  "测试科目B": {
+    "single_choice": [
+      {
+        "id": "test2_s1",
+        "number": "1",
+        "question": "Python中，用于输出到控制台的函数是？",
+        "options": [
+          {"label": "A", "text": "echo()"},
+          {"label": "B", "text": "print()"},
+          {"label": "C", "text": "console.log()"},
+          {"label": "D", "text": "write()"}
+        ],
+        "answer": "B",
+        "explanation": "Python使用print()函数输出到控制台。echo()是PHP的，console.log()是JavaScript的。"
+      },
+      {
+        "id": "test2_s2",
+        "number": "2",
+        "question": "SQL中，用于查询数据的关键字是？",
+        "options": [
+          {"label": "A", "text": "GET"},
+          {"label": "B", "text": "FIND"},
+          {"label": "C", "text": "SELECT"},
+          {"label": "D", "text": "QUERY"}
+        ],
+        "answer": "C",
+        "explanation": "SQL中使用SELECT语句从数据库中查询数据。GET、FIND、QUERY不是标准SQL查询关键字。"
+      }
+    ],
+    "multi_choice": [],
+    "true_false": [
+      {
+        "id": "test2_b1",
+        "number": "1",
+        "question": "Python是区分大小写的语言。",
+        "options": [
+          {"label": "A", "text": "正确"},
+          {"label": "B", "text": "错误"}
+        ],
+        "answer": "A",
+        "explanation": "Python是区分大小写的，例如Variable和variable是两个不同的变量名。"
+      }
+    ]
+  }
+}
